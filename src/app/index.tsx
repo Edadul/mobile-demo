@@ -1,480 +1,129 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import * as Clipboard from 'expo-clipboard';
-import {
-  AccessibilityInfo,
-  Animated,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  useColorScheme,
-  useWindowDimensions,
-} from 'react-native';
+/* eslint-disable react-hooks/immutability -- Reanimated shared values change only in interaction callbacks. */
+import { useEffect, useMemo, useState } from 'react';
+import { Animated as CoreAnimated, LayoutAnimation, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, UIManager, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { FadeIn, FadeInDown, interpolate, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
+import LottieView from 'lottie-react-native';
 
-type Palette = {
-  bg: string;
-  surface: string;
-  ink: string;
-  muted: string;
-  line: string;
-  primary: string;
-  onPrimary: string;
-  yellow: string;
-  mint: string;
-  coral: string;
-  soft: string;
-};
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) UIManager.setLayoutAnimationEnabledExperimental(true);
 
-const PALETTES: Record<'light' | 'dark', Palette> = {
-  light: {
-    bg: '#f2efff', surface: '#ffffff', ink: '#1e1b3a', muted: '#5d5880', line: '#ddd7f5',
-    primary: '#5b3df5', onPrimary: '#ffffff', yellow: '#ffc21a', mint: '#0fa77c', coral: '#e8395f', soft: '#e8e3ff',
-  },
-  dark: {
-    bg: '#16142b', surface: '#221f3d', ink: '#eceaff', muted: '#aaa6cc', line: '#363160',
-    primary: '#8b73ff', onPrimary: '#16142b', yellow: '#ffd24a', mint: '#3ddbab', coral: '#ff7896', soft: '#2c2850',
-  },
-};
+type Product = { id: number; name: string; subtitle: string; price: number; oldPrice?: number; category: string; color: string; emoji: string; badge?: string };
+const PRODUCTS: Product[] = [
+  { id: 1, name: 'Lámpara Aura', subtitle: 'Luz cálida · roble natural', price: 189, oldPrice: 229, category: 'Hogar', color: '#f4d6b4', emoji: '💡', badge: '−18%' },
+  { id: 2, name: 'Taza Terra', subtitle: 'Cerámica artesanal · 350 ml', price: 68, category: 'Hogar', color: '#e7b69c', emoji: '☕', badge: 'Nuevo' },
+  { id: 3, name: 'Audífonos Modo', subtitle: 'Cancelación de ruido · 30 h', price: 349, oldPrice: 419, category: 'Tecnología', color: '#d6dbeb', emoji: '🎧', badge: '−17%' },
+  { id: 4, name: 'Bolso Nómada', subtitle: 'Lona reciclada · edición oliva', price: 215, category: 'Accesorios', color: '#d4dbc4', emoji: '👜' },
+];
+const CATEGORIES = ['Todo', 'Hogar', 'Tecnología', 'Accesorios'];
+const money = (value: number) => `S/ ${value.toFixed(2)}`;
+const spring = { damping: 16, stiffness: 190 };
 
-const spring = { speed: 20, bounciness: 12, useNativeDriver: true } as const;
-
-function DemoCard({
-  number,
-  title,
-  description,
-  palette,
-  children,
-}: {
-  number: string;
-  title: string;
-  description: string;
-  palette: Palette;
-  children: ReactNode;
-}) {
-  const { width } = useWindowDimensions();
-  return (
-    <View style={[styles.tile, { width: width >= 780 ? '48.7%' : '100%', backgroundColor: palette.surface, borderColor: palette.line }]}>
-      <View style={styles.tileHeading}>
-        <Text style={[styles.tileNumber, { color: palette.primary }]}>{number}</Text>
-        <Text style={[styles.tileTitle, { color: palette.ink }]}>{title}</Text>
-      </View>
-      <View style={styles.demo}>{children}</View>
-      <Text style={[styles.caption, { color: palette.muted }]}>{description}</Text>
-    </View>
-  );
+function Action({ label, onPress, filled = false, compact = false, dark = false }: { label: string; onPress: () => void; filled?: boolean; compact?: boolean; dark?: boolean }) {
+  const scale = useSharedValue(1);
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  return <Animated.View style={style}><Pressable accessibilityRole="button" onPressIn={() => { scale.value = withSpring(0.91, spring); }} onPressOut={() => { scale.value = withSpring(1, spring); }} onPress={onPress} style={[styles.action, dark && darkStyles.actionDark, filled && styles.actionFilled, compact && styles.actionCompact]}><Text style={[styles.actionText, dark && darkStyles.textLight, filled && styles.actionTextFilled]}>{label}</Text></Pressable></Animated.View>;
 }
 
-function Toggle({
-  value,
-  onPress,
-  palette,
-  disabled = false,
-  animated = true,
-  accessibilityLabel,
-}: {
-  value: boolean;
-  onPress: () => void;
-  palette: Palette;
-  disabled?: boolean;
-  animated?: boolean;
-  accessibilityLabel: string;
-}) {
-  const [position] = useState(() => new Animated.Value(value ? 1 : 0));
-  useEffect(() => {
-    if (animated) Animated.spring(position, { toValue: value ? 1 : 0, ...spring }).start();
-    else position.setValue(value ? 1 : 0);
-  }, [animated, position, value]);
-  return (
-    <Pressable
-      accessibilityRole="switch"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ checked: value, disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={[styles.toggle, { backgroundColor: value ? palette.primary : palette.line, opacity: disabled ? 0.55 : 1 }]}>
-      <Animated.View style={[styles.toggleKnob, { transform: [{ translateX: position.interpolate({ inputRange: [0, 1], outputRange: [0, 24] }) }] }]}>
-        <Text style={[styles.toggleGlyph, { color: value ? palette.primary : palette.muted }]}>{value ? '✓' : '×'}</Text>
-      </Animated.View>
+function ProductCard({ product, liked, dark, onLike, onOpen, onAdd }: { product: Product; liked: boolean; dark: boolean; onLike: () => void; onOpen: () => void; onAdd: () => void }) {
+  const fade = useSharedValue(0);
+  const heartScale = useMemo(() => new CoreAnimated.Value(1), []);
+  const artScale = useMemo(() => new CoreAnimated.Value(1), []);
+  const [added, setAdded] = useState(false);
+  const cardStyle = useAnimatedStyle(() => ({ opacity: withTiming(1, { duration: 240 }), transform: [{ translateY: withSpring(fade.value ? 0 : 8) }] }));
+  useEffect(() => { fade.value = 1; }, [fade]);
+  useEffect(() => { if (!added) return; const timer = setTimeout(() => setAdded(false), 1100); return () => clearTimeout(timer); }, [added]);
+  return <Animated.View style={[styles.productCard, dark && darkStyles.card, cardStyle]}>
+    <Pressable onPress={onOpen} onPressIn={() => CoreAnimated.spring(artScale, { toValue: 0.93, useNativeDriver: true }).start()} onPressOut={() => CoreAnimated.spring(artScale, { toValue: 1, useNativeDriver: true }).start()} accessibilityRole="button" accessibilityLabel={`Ver ${product.name}`}>
+      <CoreAnimated.View style={[styles.productArt, { backgroundColor: product.color, transform: [{ scale: artScale }] }]}>
+        <Text style={styles.productEmoji}>{product.emoji}</Text>
+        {product.badge && <View style={styles.badge}><Text style={styles.badgeText}>{product.badge}</Text></View>}
+      </CoreAnimated.View>
     </Pressable>
-  );
+    <Pressable accessibilityRole="button" accessibilityLabel={liked ? 'Quitar de favoritos' : 'Guardar en favoritos'} accessibilityState={{ selected: liked }} onPress={() => { onLike(); CoreAnimated.sequence([CoreAnimated.spring(heartScale, { toValue: 1.48, speed: 18, useNativeDriver: true }), CoreAnimated.spring(heartScale, { toValue: 1, useNativeDriver: true })]).start(); }} style={[styles.heart, dark && darkStyles.heartDark]}><CoreAnimated.Text style={{ fontSize: 20, color: liked ? '#d55243' : dark ? '#efeee8' : '#25231f', transform: [{ scale: heartScale }] }}>{liked ? '♥' : '♡'}</CoreAnimated.Text></Pressable>
+    <Pressable onPress={onOpen} style={styles.productInfo}><Text style={[styles.productName, dark && darkStyles.textLight]}>{product.name}</Text><Text style={[styles.productSub, dark && darkStyles.textMuted]}>{product.subtitle}</Text><View style={styles.priceRow}><Text style={[styles.price, dark && darkStyles.textLight]}>{money(product.price)}</Text>{product.oldPrice && <Text style={styles.oldPrice}>{money(product.oldPrice)}</Text>}</View></Pressable>
+    <Action label={added ? '✓  Agregado' : '＋  Agregar'} onPress={() => { onAdd(); setAdded(true); }} compact dark={dark} />
+  </Animated.View>;
+}
+
+function CategoryChip({ label, active, dark, onPress }: { label: string; active: boolean; dark: boolean; onPress: () => void }) {
+  const scale = useMemo(() => new CoreAnimated.Value(1), []);
+  return <Pressable onPressIn={() => CoreAnimated.spring(scale, { toValue: 0.92, useNativeDriver: true }).start()} onPressOut={() => CoreAnimated.spring(scale, { toValue: 1, useNativeDriver: true }).start()} onPress={onPress}>
+    <CoreAnimated.View style={[styles.chip, dark && darkStyles.chipDark, active && styles.chipActive, { transform: [{ scale }] }]}><Text style={[styles.chipText, dark && darkStyles.textMuted, active && styles.chipTextActive]}>{active ? '✓  ' : ''}{label}</Text></CoreAnimated.View>
+  </Pressable>;
 }
 
 export default function HomeScreen() {
-  const systemScheme = useColorScheme();
-  const [dark, setDark] = useState(systemScheme === 'dark');
-  const [effectsOn, setEffectsOn] = useState(true);
-  const [reduceMotion, setReduceMotion] = useState(false);
-  const [liked, setLiked] = useState(false);
-  const [likes, setLikes] = useState(127);
-  const [wifiOn, setWifiOn] = useState(false);
-  const [cartCount, setCartCount] = useState(0);
-  const [cartPhase, setCartPhase] = useState<'idle' | 'adding' | 'flying' | 'added'>('idle');
-  const [rating, setRating] = useState(0);
-  const [copied, setCopied] = useState(false);
-  const [quantity, setQuantity] = useState(1);
-  const [password, setPassword] = useState('');
-  const [passwordVisible, setPasswordVisible] = useState(false);
-  const [notificationsOn, setNotificationsOn] = useState(false);
+  const [dark, setDark] = useState(false);
+  const [category, setCategory] = useState('Todo');
+  const [query, setQuery] = useState('');
+  const [favorites, setFavorites] = useState<number[]>([]);
+  const [cart, setCart] = useState<Record<number, number>>({});
+  const [section, setSection] = useState<'Inicio' | 'Favoritos' | 'Carrito'>('Inicio');
+  const [selected, setSelected] = useState<Product | null>(null);
+  const [ordered, setOrdered] = useState(false);
+  const [detailQty, setDetailQty] = useState(1);
   const [toast, setToast] = useState('');
-  const [undoAvailable, setUndoAvailable] = useState(false);
-  const cartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const undoValue = useRef(false);
-  const [heartScale] = useState(() => new Animated.Value(1));
-  const [cartButtonScale] = useState(() => new Animated.Value(1));
-  const [cartScale] = useState(() => new Animated.Value(1));
-  const [cartDot] = useState(() => new Animated.Value(0));
-  const [shakeX] = useState(() => new Animated.Value(0));
-  const [starScales] = useState(() => Array.from({ length: 5 }, () => new Animated.Value(1)));
+  const dragX = useSharedValue(0);
+  const cartPulse = useMemo(() => new CoreAnimated.Value(1), []);
+  const togglePosition = useSharedValue(0);
+  const toggleStyle = useAnimatedStyle(() => ({ transform: [{ translateX: togglePosition.value * 19 }] }));
+  const heroStyle = useAnimatedStyle(() => ({ transform: [{ translateX: dragX.value }, { scale: interpolate(Math.abs(dragX.value), [0, 100], [1, 0.98], 'clamp') }] }));
+  const products = useMemo(() => PRODUCTS.filter((item) => (category === 'Todo' || item.category === category) && `${item.name} ${item.subtitle}`.toLowerCase().includes(query.toLowerCase()) && (section !== 'Favoritos' || favorites.includes(item.id))), [category, favorites, query, section]);
+  const cartItems = PRODUCTS.filter((item) => cart[item.id]);
+  const count = Object.values(cart).reduce((total, value) => total + value, 0);
+  const total = cartItems.reduce((sum, item) => sum + item.price * cart[item.id], 0);
+  useEffect(() => { if (count > 0) CoreAnimated.sequence([CoreAnimated.spring(cartPulse, { toValue: 1.35, speed: 20, useNativeDriver: true }), CoreAnimated.spring(cartPulse, { toValue: 1, useNativeDriver: true })]).start(); }, [cartPulse, count]);
+  useEffect(() => { togglePosition.value = withSpring(dark ? 1 : 0, spring); }, [dark, togglePosition]);
+  const feedback = (kind: 'light' | 'success' = 'light') => { if (kind === 'success') void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); else void Haptics.selectionAsync(); };
+  const showToast = (message: string) => { setToast(message); setTimeout(() => setToast(''), 1600); };
+  const add = (product: Product, amount = 1) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setCart((current) => ({ ...current, [product.id]: (current[product.id] ?? 0) + amount })); feedback('success'); showToast(`${product.name} agregado al carrito`); };
+  const changeQty = (id: number, delta: number) => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setCart((current) => { const next = { ...current }; const value = (next[id] ?? 0) + delta; if (value <= 0) delete next[id]; else next[id] = value; return next; }); feedback(); };
+  const toggleFavorite = (product: Product) => { setFavorites((current) => current.includes(product.id) ? current.filter((id) => id !== product.id) : [...current, product.id]); feedback(); };
+  const openProduct = (product: Product) => { setSelected(product); setDetailQty(1); feedback(); };
+  const swipe = Gesture.Pan().activeOffsetX([-16, 16]).onUpdate((event) => { dragX.value = event.translationX * 0.18; }).onEnd((event) => { if (Math.abs(event.translationX) > 110) runOnJS(setCategory)(CATEGORIES[(CATEGORIES.indexOf(category) + (event.translationX < 0 ? 1 : CATEGORIES.length - 1)) % CATEGORIES.length]); dragX.value = withSpring(0, spring); });
 
-  useEffect(() => {
-    let mounted = true;
-    AccessibilityInfo.isReduceMotionEnabled().then((value) => {
-      if (mounted) {
-        setReduceMotion(value);
-        if (value) setEffectsOn(false);
-      }
-    });
-    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', (value) => {
-      setReduceMotion(value);
-      if (value) setEffectsOn(false);
-    });
-    return () => {
-      mounted = false;
-      subscription.remove();
-      if (cartTimer.current) clearTimeout(cartTimer.current);
-      if (copyTimer.current) clearTimeout(copyTimer.current);
-      if (toastTimer.current) clearTimeout(toastTimer.current);
-    };
-  }, []);
-
-  const palette = PALETTES[dark ? 'dark' : 'light'];
-  const animate = effectsOn && !reduceMotion;
-
-  const showToast = (message: string, canUndo = false) => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast(message);
-    setUndoAvailable(canUndo);
-    toastTimer.current = setTimeout(() => {
-      setToast('');
-      setUndoAvailable(false);
-    }, 2800);
-  };
-
-  const handleLike = () => {
-    const next = !liked;
-    setLiked(next);
-    setLikes((current) => current + (next ? 1 : -1));
-    if (animate && next) {
-      heartScale.setValue(0.68);
-      Animated.spring(heartScale, { toValue: 1, ...spring }).start();
-    }
-  };
-
-  const addToCart = () => {
-    if (cartPhase === 'adding' || cartPhase === 'flying') return;
-    if (cartTimer.current) clearTimeout(cartTimer.current);
-    if (!animate) {
-      setCartCount((current) => current + 1);
-      setCartPhase('added');
-      return;
-    }
-    setCartPhase('adding');
-    cartTimer.current = setTimeout(() => {
-      setCartPhase('flying');
-      cartDot.setValue(0);
-      Animated.timing(cartDot, { toValue: 1, duration: 650, useNativeDriver: true }).start();
-      cartTimer.current = setTimeout(() => {
-        setCartCount((current) => current + 1);
-        setCartPhase('added');
-      Animated.sequence([
-        Animated.spring(cartScale, { toValue: 1.45, ...spring }),
-        Animated.spring(cartScale, { toValue: 1, ...spring }),
-      ]).start();
-      cartTimer.current = null;
-      }, 650);
-    }, 700);
-  };
-
-  const handleCopy = () => {
-    setCopied(true);
-    showToast('Enlace copiado');
-    if (copyTimer.current) clearTimeout(copyTimer.current);
-    copyTimer.current = setTimeout(() => setCopied(false), 1800);
-    void Clipboard.setStringAsync('https://toque.demo/microinteracciones').catch(() => undefined);
-  };
-
-  const updateNotifications = () => {
-    undoValue.current = notificationsOn;
-    const next = !notificationsOn;
-    setNotificationsOn(next);
-    showToast(next ? 'Notificaciones activadas' : 'Notificaciones pausadas', true);
-  };
-
-  const undoNotifications = () => {
-    if (!undoAvailable) return;
-    setNotificationsOn(undoValue.current);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast('Cambio deshecho');
-    setUndoAvailable(false);
-    toastTimer.current = setTimeout(() => setToast(''), 2200);
-  };
-
-  const resetDemo = () => {
-    if (cartTimer.current) clearTimeout(cartTimer.current);
-    if (copyTimer.current) clearTimeout(copyTimer.current);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    heartScale.stopAnimation();
-    cartButtonScale.stopAnimation();
-    cartScale.stopAnimation();
-    cartDot.stopAnimation();
-    shakeX.stopAnimation();
-    starScales.forEach((star) => {
-      star.stopAnimation();
-      star.setValue(1);
-    });
-    heartScale.setValue(1);
-    cartButtonScale.setValue(1);
-    cartScale.setValue(1);
-    cartDot.setValue(0);
-    shakeX.setValue(0);
-    setDark(systemScheme === 'dark');
-    setEffectsOn(!reduceMotion);
-    setLiked(false);
-    setLikes(127);
-    setWifiOn(false);
-    setCartCount(0);
-    setCartPhase('idle');
-    setRating(0);
-    setCopied(false);
-    setQuantity(1);
-    setPassword('');
-    setPasswordVisible(false);
-    setNotificationsOn(false);
-    setUndoAvailable(false);
-    setToast('');
-  };
-
-  const strength = password.length === 0 ? 0 : Math.max(1,
-    Number(password.length >= 8) +
-    Number(/[A-Z]/.test(password) && /[a-z]/.test(password)) +
-    Number(/\d/.test(password)) +
-    Number(/[^A-Za-z0-9]/.test(password)));
-  const strengthLabel = ['', 'Débil: agrega más caracteres.', 'Regular: suma números o símbolos.', 'Buena: casi lista.', 'Fuerte. Así sí.'][strength];
-  const strengthColor = strength <= 1 ? palette.coral : strength <= 3 ? palette.yellow : palette.mint;
-
-  return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.bg }]}>
-      <ScrollView contentContainerStyle={styles.page}>
-        <View style={[styles.nav, { borderBottomColor: palette.line }]}>
-          <View>
-            <Text style={[styles.logo, { color: palette.ink }]}>toque<Text style={{ color: palette.primary }}>.</Text></Text>
-            <Text style={[styles.brandCaption, { color: palette.muted }]}>MICROINTERACCIONES QUE SE SIENTEN</Text>
-          </View>
-          <View style={styles.navActions}>
-            <Text style={[styles.smallLabel, { color: palette.muted }]}>{dark ? 'Oscuro' : 'Claro'}</Text>
-            <Toggle value={dark} onPress={() => setDark((value) => !value)} animated={animate} palette={palette} accessibilityLabel="Cambiar tema claro u oscuro" />
-          </View>
-        </View>
-
-        <View style={[styles.masterPanel, { backgroundColor: palette.surface, borderColor: palette.line }]}>
-          <View style={styles.masterCopy}>
-            <Text style={[styles.masterTitle, { color: palette.ink }]}>Microinteracciones</Text>
-            <Text style={[styles.masterHint, { color: palette.muted }]}>{animate ? 'Activadas · prueba cada control' : 'Apagadas · acciones instantáneas'}</Text>
-          </View>
-          <Toggle value={animate} disabled={reduceMotion} onPress={() => setEffectsOn((value) => !value)} animated={animate} palette={palette} accessibilityLabel="Activar o apagar las microinteracciones" />
-        </View>
-        {reduceMotion && <Text style={[styles.reduceNote, { color: palette.muted }]}>El sistema tiene activado el movimiento reducido.</Text>}
-
-        <View style={styles.hero}>
-          <Text style={[styles.eyebrow, { color: palette.primary }]}>UN TOQUE, UNA RESPUESTA</Text>
-          <Text style={[styles.headline, { color: palette.ink }]}>Que cada toque{ '\n' }se sienta.</Text>
-          <Text style={[styles.lead, { color: palette.muted }]}>Diez detalles que confirman que la interfaz te escuchó. Pruébalos y apaga las microinteracciones para comparar.</Text>
-        </View>
-
-        <View style={styles.grid}>
-          <DemoCard number="01" title="Cambiar el tema" description="El interruptor de arriba cambia los colores de toda la pantalla." palette={palette}>
-            <View style={styles.inlineDemo}>
-              <Text style={[styles.demoValue, { color: palette.ink }]}>{dark ? 'Tema oscuro' : 'Tema claro'}</Text>
-              <Text style={[styles.demoSymbol, { color: palette.primary }]}>{dark ? '☾' : '☼'}</Text>
-            </View>
-          </DemoCard>
-
-          <DemoCard number="02" title="Marcar como favorito" description="El corazón y el número responden juntos; tócalo otra vez para deshacer." palette={palette}>
-            <View style={styles.inlineDemo}>
-              <Animated.View style={{ transform: [{ scale: heartScale }] }}>
-                <Pressable accessibilityRole="button" accessibilityLabel={liked ? 'Quitar me gusta' : 'Me gusta'} accessibilityState={{ selected: liked }} onPress={handleLike} style={[styles.likeButton, { backgroundColor: palette.soft }]}>
-                  <Text style={[styles.heart, { color: liked ? palette.coral : palette.ink }]}>{liked ? '♥' : '♡'}</Text>
-                </Pressable>
-              </Animated.View>
-              <Text style={[styles.demoValue, { color: palette.ink }]}>{likes} me gusta</Text>
-            </View>
-          </DemoCard>
-
-          <DemoCard number="03" title="Encender el Wi-Fi" description="El color y la etiqueta hacen visible el estado del interruptor." palette={palette}>
-            <View style={styles.inlineDemo}>
-              <Toggle value={wifiOn} onPress={() => setWifiOn((value) => !value)} animated={animate} palette={palette} accessibilityLabel="Wi-Fi" />
-              <Text style={[styles.demoValue, { color: palette.ink }]}>{wifiOn ? 'Encendido' : 'Apagado'}</Text>
-            </View>
-          </DemoCard>
-
-          <DemoCard number="04" title="Agregar al carrito" description="Muestra carga, éxito, vuelo al carrito y el nuevo total." palette={palette}>
-            <View style={styles.cartDemo}>
-              <Pressable accessibilityRole="button" disabled={cartPhase === 'adding' || cartPhase === 'flying'} onPress={addToCart} onPressIn={() => animate && cartPhase !== 'adding' && cartPhase !== 'flying' && Animated.spring(cartButtonScale, { toValue: 0.96, ...spring }).start()} onPressOut={() => animate && Animated.spring(cartButtonScale, { toValue: 1, ...spring }).start()} style={{ flex: 1 }}>
-                <Animated.View style={[styles.cartButton, { backgroundColor: cartPhase === 'added' ? palette.mint : palette.primary, transform: [{ scale: cartButtonScale }] }]}>
-                  <Text style={[styles.cartButtonText, { color: palette.onPrimary }]}>{cartPhase === 'adding' ? 'Agregando…' : cartPhase === 'flying' ? 'Casi listo…' : cartPhase === 'added' ? '✓  Agregado' : 'Agregar al carrito'}</Text>
-                </Animated.View>
-              </Pressable>
-              <View style={[styles.cartIcon, { backgroundColor: palette.soft }]}>
-                <Text style={[styles.cartGlyph, { color: palette.ink }]}>🛒</Text>
-                <Animated.View style={[styles.badge, { backgroundColor: palette.coral, transform: [{ scale: cartCount > 0 ? cartScale : 0 }] }]}>
-                  <Text style={styles.badgeText}>{cartCount}</Text>
-                </Animated.View>
-              </View>
-              {cartPhase === 'flying' && animate && <Animated.View pointerEvents="none" style={[styles.cartDot, { backgroundColor: palette.coral, opacity: cartDot.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }), transform: [{ translateX: cartDot.interpolate({ inputRange: [0, 1], outputRange: [0, 165] }) }, { translateY: cartDot.interpolate({ inputRange: [0, 1], outputRange: [0, -28] }) }, { scale: cartDot.interpolate({ inputRange: [0, 1], outputRange: [1, 0.35] }) }] }]} />}
-            </View>
-          </DemoCard>
-
-          <DemoCard number="05" title="Calificar una experiencia" description="La selección queda marcada y las estrellas saltan en cadena." palette={palette}>
-            <View style={styles.ratingRow} accessibilityRole="radiogroup" accessibilityLabel="Calificación">
-              {starScales.map((scale, index) => (
-                <Animated.View key={index} style={{ transform: [{ scale }] }}>
-                  <Pressable accessibilityRole="radio" accessibilityLabel={`${index + 1} de 5`} accessibilityState={{ checked: rating === index + 1 }} onPress={() => {
-                    const next = index + 1;
-                    setRating(next);
-                    if (animate) Animated.stagger(65, starScales.slice(0, next).map((star) => Animated.sequence([
-                      Animated.spring(star, { toValue: 1.3, ...spring }),
-                      Animated.spring(star, { toValue: 1, ...spring }),
-                    ]))).start();
-                  }} style={styles.starButton}>
-                    <Text style={{ color: index < rating ? palette.yellow : palette.line, fontSize: 34 }}>★</Text>
-                  </Pressable>
-                </Animated.View>
-              ))}
-            </View>
-          </DemoCard>
-
-          <DemoCard number="06" title="Copiar un enlace" description="El icono cambia a un check y aparece una confirmación breve." palette={palette}>
-            <Pressable accessibilityRole="button" onPress={handleCopy} style={[styles.outlineButton, { borderColor: palette.line }]}>
-              <Text style={[styles.demoValue, { color: copied ? palette.mint : palette.ink }]}>{copied ? '✓  Copiado' : '▢  Copiar enlace'}</Text>
-            </Pressable>
-          </DemoCard>
-
-          <DemoCard number="07" title="Elegir cantidad" description="El número rebota al cambiar; no permite bajar de cero." palette={palette}>
-            <View style={styles.inlineDemo}>
-              <Pressable accessibilityRole="button" accessibilityLabel="Quitar uno" onPress={() => {
-                if (quantity === 0) {
-                  if (animate) Animated.sequence([Animated.timing(shakeX, { toValue: -6, duration: 45, useNativeDriver: true }), Animated.timing(shakeX, { toValue: 6, duration: 70, useNativeDriver: true }), Animated.timing(shakeX, { toValue: 0, duration: 45, useNativeDriver: true })]).start();
-                  return;
-                }
-                setQuantity((value) => value - 1);
-              }} style={[styles.stepButton, { backgroundColor: palette.soft }]}><Text style={[styles.stepText, { color: palette.ink }]}>−</Text></Pressable>
-              <Animated.Text accessibilityLiveRegion="polite" style={[styles.quantity, { color: palette.ink, transform: [{ translateX: shakeX }] }]}>{quantity}</Animated.Text>
-              <Pressable accessibilityRole="button" accessibilityLabel="Agregar uno" onPress={() => setQuantity((value) => value + 1)} style={[styles.stepButton, { backgroundColor: palette.soft }]}><Text style={[styles.stepText, { color: palette.ink }]}>+</Text></Pressable>
-            </View>
-          </DemoCard>
-
-          <DemoCard number="08" title="Crear una contraseña" description="El medidor y el consejo cambian mientras escribes." palette={palette}>
-            <View style={styles.passwordDemo}>
-              <View style={[styles.passwordField, { backgroundColor: palette.bg, borderColor: palette.line }]}>
-                <TextInput accessibilityLabel="Contraseña de prueba" value={password} onChangeText={setPassword} secureTextEntry={!passwordVisible} placeholder="Escribe una contraseña" placeholderTextColor={palette.muted} autoCapitalize="none" style={[styles.passwordInput, { color: palette.ink }]} />
-                <Pressable accessibilityRole="button" accessibilityLabel={passwordVisible ? 'Ocultar contraseña' : 'Mostrar contraseña'} onPress={() => setPasswordVisible((value) => !value)}><Text style={{ color: palette.primary, fontSize: 12, fontWeight: '800' }}>{passwordVisible ? 'Ocultar' : 'Ver'}</Text></Pressable>
-              </View>
-              <View style={[styles.meterTrack, { backgroundColor: palette.line }]}><View style={{ width: `${strength * 25}%`, height: '100%', backgroundColor: strengthColor, borderRadius: 5 }} /></View>
-              <Text style={[styles.strengthText, { color: palette.muted }]}>{strengthLabel || 'Usa 8 caracteres, mayúsculas, números y símbolos.'}</Text>
-            </View>
-          </DemoCard>
-
-          <DemoCard number="09" title="Activar notificaciones" description="El toast da opción de deshacer el cambio durante unos segundos." palette={palette}>
-            <View style={styles.inlineDemo}>
-              <Toggle value={notificationsOn} onPress={updateNotifications} animated={animate} palette={palette} accessibilityLabel="Notificaciones" />
-              <Text style={[styles.demoValue, { color: palette.ink }]}>{notificationsOn ? 'Activadas' : 'Pausadas'}</Text>
-            </View>
-          </DemoCard>
-
-          <DemoCard number="10" title="Deshacer una acción" description="Activa las notificaciones y toca Deshacer para revertir el cambio." palette={palette}>
-            <Pressable accessibilityRole="button" disabled={!undoAvailable} onPress={undoNotifications} style={[styles.outlineButton, { borderColor: palette.line, opacity: undoAvailable ? 1 : 0.5 }]}>
-              <Text style={[styles.demoValue, { color: palette.ink }]}>↶  Deshacer</Text>
-            </Pressable>
-          </DemoCard>
-        </View>
-
-        <View style={[styles.footer, { borderTopColor: palette.line }]}>
-          <Text style={[styles.footerText, { color: palette.muted }]}>Toca, observa y compara. Todo funciona en esta pantalla, sin compras ni servicios externos.</Text>
-          <Pressable accessibilityRole="button" onPress={resetDemo} style={[styles.resetButton, { borderColor: palette.line }]}><Text style={[styles.resetText, { color: palette.muted }]}>Reiniciar demo</Text></Pressable>
-        </View>
-      </ScrollView>
-      {toast !== '' && (
-        <View accessibilityRole="alert" style={[styles.toast, { backgroundColor: palette.ink }]}>
-          <Text style={[styles.toastText, { color: palette.bg }]}>{toast}</Text>
-          {undoAvailable && <Pressable accessibilityRole="button" onPress={undoNotifications} style={[styles.undoButton, { backgroundColor: palette.primary }]}><Text style={[styles.undoText, { color: palette.onPrimary }]}>Deshacer</Text></Pressable>}
-        </View>
-      )}
-    </SafeAreaView>
-  );
+  return <SafeAreaView style={[styles.safe, dark && darkStyles.safe]} edges={['top']}><StatusBar barStyle={dark ? 'light-content' : 'dark-content'} />
+    <View style={[styles.topbar, dark && darkStyles.topbar]}><Pressable onPress={() => setSection('Inicio')}><Text style={[styles.logo, dark && darkStyles.textLight]}>buen<Text style={{ color: '#78916c' }}>día</Text><Text style={styles.logoDot}>.</Text></Text></Pressable><View style={darkStyles.headerActions}><Pressable accessibilityRole="switch" accessibilityLabel="Cambiar modo oscuro" accessibilityState={{ checked: dark }} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setDark((value) => !value); feedback(); }} style={[darkStyles.themeToggle, dark && darkStyles.themeToggleDark]}><Text style={darkStyles.themeGlyph}>{dark ? '☾' : '☀'}</Text><Animated.View style={[darkStyles.themeKnob, toggleStyle]} /></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Carrito, ${count} productos`} onPress={() => { setSection('Carrito'); feedback(); }} style={[styles.cartTop, dark && darkStyles.controlDark]}><CoreAnimated.Text style={[styles.bag, dark && darkStyles.textLight, { transform: [{ scale: cartPulse }] }]}>▱</CoreAnimated.Text>{count > 0 && <Animated.View style={styles.countBadge}><Text style={styles.countText}>{count}</Text></Animated.View>}</Pressable></View></View>
+    {section === 'Carrito' ? <ScrollView contentContainerStyle={styles.page}>
+      <Pressable onPress={() => setSection('Inicio')}><Text style={styles.back}>‹  Seguir comprando</Text></Pressable><Text style={[styles.heading, dark && darkStyles.textLight]}>Tu carrito</Text><Text style={[styles.subheading, dark && darkStyles.textMuted]}>{count ? `${count} productos elegidos con calma` : 'Todavía no agregaste nada'}</Text>
+      {cartItems.length === 0 ? <View style={styles.empty}><Text style={styles.emptyIcon}>🛍️</Text><Text style={[styles.emptyTitle, dark && darkStyles.textLight]}>Tu próxima favorita te espera</Text><Action label="Explorar la tienda" onPress={() => setSection('Inicio')} filled /></View> : <>{cartItems.map((item) => <Animated.View entering={FadeInDown.duration(220)} key={item.id} style={[styles.cartLine, dark && darkStyles.lineDark]}><View style={[styles.cartThumb, { backgroundColor: item.color }]}><Text style={{ fontSize: 28 }}>{item.emoji}</Text></View><View style={styles.cartDetails}><Text style={[styles.productName, dark && darkStyles.textLight]}>{item.name}</Text><Text style={[styles.productSub, dark && darkStyles.textMuted]}>{money(item.price)} · {item.subtitle}</Text><View style={styles.qtyRow}><Pressable onPress={() => changeQty(item.id, -1)} style={[styles.qtyBtn, dark && darkStyles.controlDark]}><Text style={dark ? darkStyles.textLight : undefined}>−</Text></Pressable><Text style={[styles.qty, dark && darkStyles.textLight]}>{cart[item.id]}</Text><Pressable onPress={() => changeQty(item.id, 1)} style={[styles.qtyBtn, dark && darkStyles.controlDark]}><Text style={dark ? darkStyles.textLight : undefined}>＋</Text></Pressable></View></View><Text style={[styles.price, dark && darkStyles.textLight]}>{money(item.price * cart[item.id])}</Text></Animated.View>)}<View style={[styles.totalLine, dark && darkStyles.lineDark]}><Text style={[styles.totalLabel, dark && darkStyles.textMuted]}>Total</Text><Text style={[styles.total, dark && darkStyles.textLight]}>{money(total)}</Text></View><Text style={[styles.shipping, dark && darkStyles.textMuted]}>Envío gratis en pedidos desde S/ 250</Text><Action label="Continuar al pago  →" onPress={() => { setOrdered(true); feedback('success'); }} filled /></>}</ScrollView> : <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+      {section === 'Inicio' && <><View style={styles.greeting}><Text style={styles.eyebrow}>OBJETOS PARA SENTIRTE EN CASA</Text><Text style={[styles.heading, dark && darkStyles.textLight]}>Pequeños gustos,{ '\n' }grandes días.</Text><Text style={[styles.subheading, dark && darkStyles.textMuted]}>Diseño bonito, hecho para acompañarte.</Text></View><GestureDetector gesture={swipe}><Animated.View style={[styles.hero, dark && darkStyles.heroDark, heroStyle]}><View style={styles.heroText}><Text style={styles.heroEyebrow}>FAVORITO DE LA SEMANA</Text><Text style={[styles.heroTitle, dark && darkStyles.textLight]}>Luz suave.{ '\n' }Mente en calma.</Text><Text style={[styles.heroPrice, dark && darkStyles.textMuted]}>Lámpara Aura  ·  S/ 189</Text><Action label="Descubrir" onPress={() => openProduct(PRODUCTS[0])} dark={dark} /></View><Text style={styles.heroEmoji}>🪔</Text><Text style={styles.swipeHint}>desliza para explorar  ↔</Text></Animated.View></GestureDetector></>}
+      <View style={styles.sectionHead}><View><Text style={[styles.sectionTitle, dark && darkStyles.textLight]}>{section === 'Favoritos' ? 'Tus guardados' : 'Para ti'}</Text><Text style={[styles.sectionCaption, dark && darkStyles.textMuted]}>{products.length} piezas seleccionadas</Text></View><Text style={[styles.filterIcon, dark && darkStyles.textMuted]}>⌘</Text></View>
+      <View style={[styles.search, dark && darkStyles.controlDark]}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Buscar algo bonito..." placeholderTextColor={dark ? '#999a91' : '#99958d'} style={[styles.searchInput, dark && darkStyles.textLight]} returnKeyType="search" accessibilityLabel="Buscar productos" />{query.length > 0 && <Pressable accessibilityLabel="Limpiar búsqueda" onPress={() => setQuery('')}><Text style={[styles.searchIcon, dark && darkStyles.textMuted]}>×</Text></Pressable>}</View>
+      {section === 'Inicio' && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categories}>{CATEGORIES.map((item) => <CategoryChip key={item} label={item} active={category === item} dark={dark} onPress={() => { setCategory(item); feedback(); }} />)}</ScrollView>}
+      <View style={styles.grid}>{products.map((product) => <ProductCard key={product.id} product={product} dark={dark} liked={favorites.includes(product.id)} onLike={() => toggleFavorite(product)} onOpen={() => openProduct(product)} onAdd={() => add(product)} />)}</View>
+      {products.length === 0 && <View style={styles.empty}><Text style={styles.emptyIcon}>⌕</Text><Text style={styles.emptyTitle}>No encontramos eso</Text><Text style={styles.subheading}>Prueba otra palabra o categoría.</Text></View>}
+    </ScrollView>}
+    <View style={[styles.tabbar, dark && darkStyles.tabbar]}>{(['Inicio', 'Favoritos', 'Carrito'] as const).map((item, index) => <Pressable key={item} onPress={() => { setSection(item); feedback(); }} style={styles.tab}><Text style={[styles.tabIcon, dark && darkStyles.textMuted, section === item && styles.tabActive]}>{['⌂', '♡', '▱'][index]}{item === 'Carrito' && count > 0 ? ` ${count}` : ''}</Text><Text style={[styles.tabText, dark && darkStyles.textMuted, section === item && styles.tabActive]}>{item}</Text></Pressable>)}</View>
+    {!!toast && <View style={styles.toast}><Text style={styles.toastText}>✓  {toast}</Text></View>}
+    {selected && <Animated.View entering={FadeIn.duration(160)} style={styles.scrim}><Pressable style={StyleSheet.absoluteFill} onPress={() => setSelected(null)} accessibilityLabel="Cerrar detalle"/><Animated.View entering={FadeInDown.duration(250)} style={[styles.sheet, dark && darkStyles.sheet]}><View style={styles.handle}/><Pressable onPress={() => setSelected(null)} style={styles.close}><Text style={{ fontSize: 22 }}>×</Text></Pressable><View style={[styles.detailArt, { backgroundColor: selected.color }]}><Text style={{ fontSize: 94 }}>{selected.emoji}</Text></View><Text style={styles.detailCategory}>{selected.category.toUpperCase()}  ·  HECHO PARA DURAR</Text><Text style={[styles.detailTitle, dark && darkStyles.textLight]}>{selected.name}</Text><Text style={[styles.detailSub, dark && darkStyles.textMuted]}>{selected.subtitle}</Text><Text style={[styles.detailDescription, dark && darkStyles.textMuted]}>Una pieza especial para disfrutar todos los días. Diseño cuidado, materiales nobles y una historia que vale la pena llevar a casa.</Text><View style={styles.detailBottom}><View><Text style={[styles.price, dark && darkStyles.textLight]}>{money(selected.price)}</Text><View style={styles.qtyRow}><Pressable onPress={() => setDetailQty(Math.max(1, detailQty - 1))} style={[styles.qtyBtn, dark && darkStyles.controlDark]}><Text style={dark ? darkStyles.textLight : undefined}>−</Text></Pressable><Text style={[styles.qty, dark && darkStyles.textLight]}>{detailQty}</Text><Pressable onPress={() => setDetailQty(detailQty + 1)} style={[styles.qtyBtn, dark && darkStyles.controlDark]}><Text style={dark ? darkStyles.textLight : undefined}>＋</Text></Pressable></View></View><View style={{ flex: 1 }}><Action label="Agregar al carrito" onPress={() => { add(selected, detailQty); setSelected(null); }} filled /></View></View></Animated.View></Animated.View>}
+    {ordered && <Animated.View entering={FadeIn.duration(180)} style={styles.scrim}><Animated.View entering={FadeInDown.duration(260)} style={[styles.orderCard, dark && darkStyles.sheet]}><Pressable onPress={() => setOrdered(false)} style={styles.close}><Text style={{ fontSize: 22 }}>×</Text></Pressable><LottieView source={require('../../assets/success.json')} autoPlay loop={false} style={styles.lottie} onAnimationFinish={() => {}}/><Text style={[styles.orderTitle, dark && darkStyles.textLight]}>¡Qué buena elección!</Text><Text style={[styles.orderCopy, dark && darkStyles.textMuted]}>Tu pedido de {money(total)} está listo.{ '\n' }Gracias por apoyar el diseño independiente.</Text><Action label="Volver a la tienda" onPress={() => { setOrdered(false); setCart({}); setSection('Inicio'); }} filled /></Animated.View></Animated.View>}
+  </SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  page: { alignItems: 'center', paddingHorizontal: 24, paddingBottom: 40 },
-  nav: { width: '100%', maxWidth: 1180, minHeight: 76, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1 },
-  logo: { fontSize: 26, fontWeight: '900', letterSpacing: -1.3 },
-  brandCaption: { fontSize: 7, letterSpacing: 1.5, fontWeight: '700', marginTop: 1 },
-  navActions: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  smallLabel: { fontSize: 11, fontWeight: '700' },
-  toggle: { width: 58, height: 34, borderRadius: 18, padding: 4, justifyContent: 'center' },
-  toggleKnob: { width: 26, height: 26, borderRadius: 14, backgroundColor: '#ffffff', alignItems: 'center', justifyContent: 'center' },
-  toggleGlyph: { fontSize: 14, fontWeight: '900' },
-  masterPanel: { width: '100%', maxWidth: 1180, marginTop: 18, minHeight: 72, borderRadius: 18, borderWidth: 1, paddingHorizontal: 18, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  masterCopy: { flex: 1, marginRight: 12 },
-  masterTitle: { fontSize: 14, fontWeight: '800' },
-  masterHint: { fontSize: 11, marginTop: 3 },
-  reduceNote: { width: '100%', maxWidth: 1180, fontSize: 11, marginTop: 8 },
-  hero: { width: '100%', maxWidth: 900, alignItems: 'center', paddingTop: 42, paddingBottom: 35 },
-  eyebrow: { fontSize: 9, letterSpacing: 2.2, fontWeight: '800' },
-  headline: { fontSize: 42, lineHeight: 48, fontWeight: '900', letterSpacing: -1.7, textAlign: 'center', marginTop: 9 },
-  lead: { maxWidth: 570, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 14 },
-  grid: { width: '100%', maxWidth: 1180, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 16 },
-  tile: { width: '48.7%', minHeight: 220, borderRadius: 22, borderWidth: 1, padding: 19, justifyContent: 'space-between' },
-  tileHeading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  tileNumber: { fontSize: 10, fontWeight: '900', letterSpacing: 1 },
-  tileTitle: { fontSize: 16, fontWeight: '800', flexShrink: 1 },
-  demo: { minHeight: 104, alignItems: 'center', justifyContent: 'center', paddingVertical: 8 },
-  caption: { fontSize: 10, lineHeight: 15, minHeight: 30 },
-  inlineDemo: { width: '100%', minHeight: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 },
-  demoValue: { fontSize: 13, fontWeight: '800' },
-  demoSymbol: { fontSize: 34, fontWeight: '700' },
-  likeButton: { width: 58, height: 58, borderRadius: 30, alignItems: 'center', justifyContent: 'center' },
-  heart: { fontSize: 34, lineHeight: 40 },
-  cartDemo: { width: '100%', position: 'relative', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 },
-  cartButton: { minHeight: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
-  cartButtonText: { fontSize: 11, fontWeight: '800' },
-  cartIcon: { width: 52, height: 52, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  cartGlyph: { fontSize: 24 },
-  badge: { position: 'absolute', top: -6, right: -6, minWidth: 20, height: 20, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '900' },
-  cartDot: { position: 'absolute', left: '42%', top: 15, width: 12, height: 12, borderRadius: 7 },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  starButton: { paddingHorizontal: 3, paddingVertical: 6 },
-  outlineButton: { minHeight: 48, borderRadius: 15, borderWidth: 1, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' },
-  stepButton: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  stepText: { fontSize: 26, fontWeight: '800', lineHeight: 30 },
-  quantity: { minWidth: 35, textAlign: 'center', fontSize: 28, fontWeight: '900' },
-  passwordDemo: { width: '100%', gap: 9 },
-  passwordField: { minHeight: 46, borderWidth: 1, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  passwordInput: { flex: 1, minWidth: 0, paddingVertical: 8, fontSize: 11, outlineStyle: 'none' } as any,
-  meterTrack: { width: '100%', height: 7, borderRadius: 5, overflow: 'hidden' },
-  strengthText: { fontSize: 9, lineHeight: 13 },
-  footer: { width: '100%', maxWidth: 1180, borderTopWidth: 1, marginTop: 32, paddingTop: 20, alignItems: 'center' },
-  footerText: { textAlign: 'center', fontSize: 10, lineHeight: 15 },
-  resetButton: { marginTop: 12, paddingHorizontal: 15, paddingVertical: 9, borderWidth: 1, borderRadius: 13 },
-  resetText: { fontSize: 11, fontWeight: '800' },
-  toast: { position: 'absolute', bottom: 20, alignSelf: 'center', minHeight: 54, maxWidth: '92%', borderRadius: 18, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 15, elevation: 8 },
-  toastText: { fontSize: 12, fontWeight: '700', flexShrink: 1 },
-  undoButton: { borderRadius: 11, paddingHorizontal: 13, paddingVertical: 9 },
-  undoText: { fontSize: 11, fontWeight: '800' },
+  safe: { flex: 1, backgroundColor: '#faf9f6' }, page: { paddingHorizontal: 22, paddingBottom: 30 }, topbar: { height: 62, paddingHorizontal: 23, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, logo: { fontSize: 25, fontWeight: '900', letterSpacing: -1.4, color: '#292923' }, logoDot: { color: '#d28a62' }, cartTop: { height: 42, width: 44, borderRadius: 16, backgroundColor: '#f0eee8', alignItems: 'center', justifyContent: 'center' }, bag: { fontSize: 24, color: '#292923' }, countBadge: { position: 'absolute', right: -3, top: -4, backgroundColor: '#d28a62', minWidth: 19, height: 19, borderRadius: 10, justifyContent: 'center', alignItems: 'center' }, countText: { fontSize: 10, color: '#fff', fontWeight: '800' }, greeting: { paddingTop: 22, paddingBottom: 22 }, eyebrow: { color: '#84977a', fontSize: 10, letterSpacing: 1.4, fontWeight: '800' }, heading: { color: '#292923', fontSize: 32, fontWeight: '800', letterSpacing: -1.2, lineHeight: 37, marginTop: 9 }, subheading: { color: '#858179', fontSize: 13, lineHeight: 19, marginTop: 7 }, hero: { height: 203, borderRadius: 24, backgroundColor: '#e9e9df', padding: 20, justifyContent: 'center', overflow: 'hidden', position: 'relative' }, heroText: { zIndex: 1 }, heroEyebrow: { color: '#77856d', fontSize: 8, fontWeight: '900', letterSpacing: 1 }, heroTitle: { color: '#30352d', fontSize: 24, lineHeight: 28, fontWeight: '800', letterSpacing: -0.6, marginTop: 8 }, heroPrice: { color: '#62675c', fontSize: 10, marginTop: 8, marginBottom: 11 }, heroEmoji: { position: 'absolute', right: -6, top: 18, fontSize: 105, opacity: 0.9 }, swipeHint: { position: 'absolute', right: 13, bottom: 12, color: '#898d80', fontSize: 8 }, action: { alignSelf: 'flex-start', backgroundColor: '#fffefa', paddingVertical: 11, paddingHorizontal: 17, borderRadius: 14, marginTop: 12 }, actionFilled: { backgroundColor: '#30372e', alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' }, actionCompact: { marginTop: 0, alignSelf: 'stretch', alignItems: 'center', backgroundColor: '#f1f0eb', paddingVertical: 9, borderRadius: 12 }, actionText: { color: '#30352d', fontSize: 11, fontWeight: '800' }, actionTextFilled: { color: '#fff' }, sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 28, marginBottom: 13 }, sectionTitle: { color: '#292923', fontSize: 19, fontWeight: '800', letterSpacing: -0.4 }, sectionCaption: { color: '#99958d', fontSize: 10, marginTop: 3 }, filterIcon: { color: '#55594f', fontSize: 20 }, search: { height: 46, borderRadius: 15, backgroundColor: '#f0eee8', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, marginBottom: 12 }, searchIcon: { color: '#7d7a72', fontSize: 25, marginRight: 8 }, searchInput: { flex: 1, color: '#292923', fontSize: 12, paddingVertical: 0 }, categories: { gap: 8, paddingBottom: 14 }, chip: { borderRadius: 20, borderWidth: 1, borderColor: '#e8e5dd', paddingHorizontal: 15, paddingVertical: 9, backgroundColor: '#fffefa' }, chipActive: { backgroundColor: '#30372e', borderColor: '#30372e' }, chipText: { color: '#79766e', fontSize: 10, fontWeight: '700' }, chipTextActive: { color: '#fff' }, grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 13, paddingBottom: 18 }, productCard: { width: '47%', backgroundColor: '#fffefa', borderRadius: 19, padding: 9, position: 'relative', borderColor: '#f0eee9', borderWidth: 1 }, productArt: { height: 132, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, productEmoji: { fontSize: 61 }, badge: { position: 'absolute', top: 8, left: 8, backgroundColor: '#fffefa', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 4 }, badgeText: { fontSize: 8, fontWeight: '900', color: '#616556' }, heart: { position: 'absolute', top: 12, right: 12, height: 31, width: 31, borderRadius: 16, backgroundColor: '#ffffffdd', alignItems: 'center', justifyContent: 'center' }, productInfo: { paddingHorizontal: 3, paddingTop: 9, paddingBottom: 10 }, productName: { color: '#302f2a', fontWeight: '800', fontSize: 12 }, productSub: { color: '#99958d', fontSize: 9, lineHeight: 14, marginTop: 3 }, priceRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 8 }, price: { color: '#33372f', fontWeight: '900', fontSize: 13 }, oldPrice: { color: '#aaa59a', textDecorationLine: 'line-through', fontSize: 9 }, tabbar: { height: 68, backgroundColor: '#fffefa', borderTopColor: '#eeece6', borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingBottom: 4 }, tab: { flex: 1, alignItems: 'center', gap: 3 }, tabIcon: { color: '#a5a198', fontSize: 20, fontWeight: '800' }, tabText: { color: '#a5a198', fontSize: 9, fontWeight: '600' }, tabActive: { color: '#424b3e' }, toast: { position: 'absolute', bottom: 77, alignSelf: 'center', backgroundColor: '#30372e', paddingVertical: 12, paddingHorizontal: 17, borderRadius: 14 }, toastText: { color: '#fff', fontSize: 11, fontWeight: '700' }, back: { color: '#77856d', fontSize: 12, fontWeight: '700', marginTop: 13 }, empty: { alignItems: 'center', paddingVertical: 55, gap: 8 }, emptyIcon: { fontSize: 46, color: '#b5b9aa' }, emptyTitle: { color: '#34372f', fontWeight: '800', fontSize: 16 }, cartLine: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderColor: '#eeece6' }, cartThumb: { width: 62, height: 62, borderRadius: 15, alignItems: 'center', justifyContent: 'center' }, cartDetails: { flex: 1 }, qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 }, qtyBtn: { width: 26, height: 26, borderRadius: 9, backgroundColor: '#f0eee8', alignItems: 'center', justifyContent: 'center' }, qty: { color: '#35362f', fontWeight: '800', fontSize: 11 }, totalLine: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 20 }, totalLabel: { fontSize: 15, fontWeight: '700', color: '#66645d' }, total: { fontSize: 20, fontWeight: '900', color: '#30372e' }, shipping: { color: '#8a897f', fontSize: 10, marginTop: 9 }, scrim: { ...StyleSheet.absoluteFill, backgroundColor: '#181a1680', justifyContent: 'flex-end', zIndex: 5 }, sheet: { backgroundColor: '#faf9f6', borderTopLeftRadius: 27, borderTopRightRadius: 27, paddingHorizontal: 22, paddingTop: 10, paddingBottom: 27 }, handle: { height: 4, width: 38, borderRadius: 2, backgroundColor: '#d5d3cb', alignSelf: 'center', marginBottom: 10 }, close: { position: 'absolute', zIndex: 2, top: 17, right: 20, height: 34, width: 34, borderRadius: 18, backgroundColor: '#ffffffdd', alignItems: 'center', justifyContent: 'center' }, detailArt: { height: 214, borderRadius: 19, alignItems: 'center', justifyContent: 'center', marginBottom: 17 }, detailCategory: { color: '#84917a', fontSize: 9, letterSpacing: 1.1, fontWeight: '800' }, detailTitle: { color: '#2e3029', fontSize: 25, fontWeight: '900', marginTop: 5 }, detailSub: { color: '#89867d', fontSize: 12, marginTop: 4 }, detailDescription: { color: '#65645c', fontSize: 11, lineHeight: 17, marginTop: 13 }, detailBottom: { flexDirection: 'row', alignItems: 'center', gap: 20, marginTop: 17 }, orderCard: { margin: 20, backgroundColor: '#faf9f6', borderRadius: 25, padding: 24, alignItems: 'center' }, lottie: { height: 115, width: 115 }, orderTitle: { color: '#30372e', fontSize: 21, fontWeight: '900', marginTop: 6 }, orderCopy: { color: '#77746b', fontSize: 12, lineHeight: 19, textAlign: 'center', marginTop: 8 },
+});
+
+const darkStyles = StyleSheet.create({
+  safe: { backgroundColor: '#171a17' },
+  topbar: { backgroundColor: '#171a17' },
+  textLight: { color: '#f3f1e8' },
+  textMuted: { color: '#a9ada1' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  themeToggle: { width: 52, height: 31, borderRadius: 18, backgroundColor: '#e7e4dc', padding: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start' },
+  themeToggleDark: { backgroundColor: '#3e493e' },
+  themeGlyph: { position: 'absolute', left: 7, fontSize: 13, color: '#85816f' },
+  themeKnob: { width: 23, height: 23, borderRadius: 12, backgroundColor: '#fff', elevation: 2 },
+  controlDark: { backgroundColor: '#292e29' },
+  card: { backgroundColor: '#202520', borderColor: '#343a33' },
+  actionDark: { backgroundColor: '#292e29' },
+  heartDark: { backgroundColor: '#292e29dd' },
+  chipDark: { backgroundColor: '#222722', borderColor: '#383e37' },
+  heroDark: { backgroundColor: '#292e29' },
+  tabbar: { backgroundColor: '#1f231f', borderTopColor: '#343a33' },
+  lineDark: { borderColor: '#343a33' },
+  sheet: { backgroundColor: '#202520' },
 });
