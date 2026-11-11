@@ -1,56 +1,37 @@
-# Welcome to your Expo app 👋
+# toque. — Laboratorio de microinteracciones
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Una pantalla Expo para probar diez microinteracciones: cambio de tema, favorito, Wi-Fi, carrito, calificación, copiar enlace, selector de cantidad, medidor de contraseña, notificaciones y deshacer. El interruptor general permite comparar las mismas acciones con animaciones activadas o apagadas. Todo se simula localmente.
 
-## Get started
+## Instalación
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Este repositorio usa pnpm:
 
 ```bash
-npm run reset-project
+pnpm install
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+## Abrir en Chrome
 
-### Other setup steps
+```bash
+npx expo start --web
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Abre en Chrome la dirección local que muestra Expo (normalmente `http://localhost:8081`).
 
-## Learn more
+Para generar la versión web estática:
 
-To learn more about developing your project with Expo, look at the following resources:
+```bash
+npx expo export --platform web
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Recorrido de 30 segundos
 
-## Join the community
+1. Cambia entre tema claro y oscuro con el interruptor de la esquina superior.
+2. Marca el corazón y observa cómo cambia el contador; prueba también el interruptor de Wi-Fi.
+3. Califica con estrellas y cambia la cantidad con los botones − y +.
+4. Escribe una contraseña para ver el medidor, y toca **Ver** para alternar su visibilidad.
+5. Agrega al carrito: aparece la carga, el punto llega al carrito y el contador rebota.
+6. Copia el enlace o activa las notificaciones; usa **Deshacer** en el aviso.
+7. Apaga **Microinteracciones** y repite una acción para comparar el cambio instantáneo.
 
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+La opción de movimiento reducido del sistema desactiva las animaciones. No hay compras, persistencia ni envío de formularios.
