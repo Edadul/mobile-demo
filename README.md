@@ -23,6 +23,11 @@ Para generar la versión web estática:
 ```bash
 npx expo export --platform web
 ```
+## Link del video explicativo:
+
+```bash
+https://www.youtube.com/watch?v=5bLWjHXxpWc
+```
 
 ## Recorrido de 30 segundos
 
